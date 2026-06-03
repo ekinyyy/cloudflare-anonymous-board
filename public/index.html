@@ -3,36 +3,108 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Anonymous Message Board</title>
+  <title>QQ Zone Guestbook</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <main class="container">
-    <h1>Anonymous Message Board</h1>
-    <form id="postForm">
-      <input name="name" placeholder="Anonymous" maxlength="50">
-      <textarea name="message" placeholder="Write a message..." required maxlength="2000"></textarea>
-      <button type="submit">Post</button>
-    </form>
-    <section><h2>Messages</h2><div id="messages"></div></section>
-  </main>
+  <div class="page-shell">
+    <header class="top-banner">
+      <div class="banner-badge">QQ空间</div>
+      <div class="banner-copy">
+        <h1>Silent Guestbook</h1>
+        <p>伤感非主流 · 留下你的痕迹</p>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="profile-card">
+        <div class="avatar-wrap">
+          <div class="avatar">✝</div>
+        </div>
+        <h2>Lonely Night</h2>
+        <p class="profile-text">A quiet corner for unsent feelings, fading memories, and midnight words.</p>
+        <div class="status">
+          <span class="dot"></span>
+          Online
+        </div>
+      </aside>
+
+      <section class="main-card">
+        <section class="composer panel">
+          <h2>Write a message</h2>
+          <form id="postForm">
+            <label class="field">
+              <span>Name</span>
+              <input name="name" placeholder="Anonymous" maxlength="50">
+            </label>
+
+            <label class="field">
+              <span>Message</span>
+              <textarea name="message" placeholder="Leave a quiet thought..." required maxlength="2000"></textarea>
+            </label>
+
+            <button type="submit">Leave a memory</button>
+          </form>
+        </section>
+
+        <section class="messages-panel panel">
+          <div class="panel-heading">
+            <h2>Guestbook entries</h2>
+            <span>Echoes in the dark</span>
+          </div>
+          <div id="messages" class="messages"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
   <script>
     async function loadMessages() {
       const res = await fetch('/api/messages');
       const data = await res.json();
-      document.getElementById('messages').innerHTML = data.messages.map(m =>
-        '<article><strong>' + escapeHtml(m.name) + '</strong><p>' + escapeHtml(m.message) + '</p></article>'
-      ).join('');
+      const messages = Array.isArray(data.messages) ? data.messages : [];
+
+      document.getElementById('messages').innerHTML = messages.length
+        ? messages.map(m => `
+            <article class="message-card">
+              <div class="message-meta">
+                <strong>${escapeHtml(m.name || 'Anonymous')}</strong>
+                <span>${formatDate(m.createdAt)}</span>
+              </div>
+              <p>${escapeHtml(m.message || '').replace(/\n/g, '<br>')}</p>
+            </article>
+          `).join('')
+        : '<div class="empty-state">No messages yet. The page feels especially quiet tonight.</div>';
     }
+
     document.getElementById('postForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      await fetch('/api/messages', { method: 'POST', body: new FormData(e.target) });
-      e.target.reset();
+      const form = e.target;
+
+      await fetch('/api/messages', {
+        method: 'POST',
+        body: new FormData(form)
+      });
+
+      form.reset();
       loadMessages();
     });
+
     function escapeHtml(s) {
-      return String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+      return String(s)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
     }
+
+    function formatDate(value) {
+      if (!value) return 'just now';
+      const date = new Date(value);
+      return isNaN(date.getTime()) ? 'just now' : date.toLocaleString();
+    }
+
     loadMessages();
   </script>
 </body>
