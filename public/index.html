@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>匿名留言板</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -35,7 +35,7 @@
   </main>
   <script>
     async function loadMessages() {
-      const res = await fetch('/api/messages', { cache: 'no-store' });
+      const res = await fetch('/api/messages?t=' + Date.now(), { cache: 'no-store' });
       const data = await res.json();
       const messages = Array.isArray(data.messages) ? data.messages : [];
       messages.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
@@ -47,13 +47,12 @@
                 <time>${formatDate(m.createdAt)}</time>
               </div>
               <p>${escapeHtml(m.message || '').replace(/\n/g, '<br>')}</p>
-            </article>
-          `).join('') : '<div class="empty-state">暂无留言，来做第一个发言的人吧。</div>';
+            </article>`).join('') : '<div class="empty-state">暂无留言，来做第一个发言的人吧。</div>';
     }
     document.getElementById('postForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;
-      const res = await fetch('/api/messages', { method: 'POST', body: new FormData(form) });
+      const res = await fetch('/api/messages', { method: 'POST', body: new FormData(form), cache: 'no-store' });
       if (res.ok) { form.reset(); await loadMessages(); }
     });
     function escapeHtml(s) { return String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
