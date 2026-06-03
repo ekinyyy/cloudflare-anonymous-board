@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anonymous Message Board</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Anonymous Message Board</h1>
+    <form id="postForm">
+      <input name="name" placeholder="Anonymous" maxlength="50">
+      <textarea name="message" placeholder="Write a message..." required maxlength="2000"></textarea>
+      <button type="submit">Post</button>
+    </form>
+    <section><h2>Messages</h2><div id="messages"></div></section>
+  </main>
+  <script>
+    async function loadMessages() {
+      const res = await fetch('/api/messages');
+      const data = await res.json();
+      document.getElementById('messages').innerHTML = data.messages.map(m =>
+        '<article><strong>' + escapeHtml(m.name) + '</strong><p>' + escapeHtml(m.message) + '</p></article>'
+      ).join('');
+    }
+    document.getElementById('postForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await fetch('/api/messages', { method: 'POST', body: new FormData(e.target) });
+      e.target.reset();
+      loadMessages();
+    });
+    function escapeHtml(s) {
+      return String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+    }
+    loadMessages();
+  </script>
+</body>
+</html>
