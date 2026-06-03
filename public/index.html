@@ -38,7 +38,8 @@
       const res = await fetch('/api/messages', { cache: 'no-store' });
       const data = await res.json();
       const messages = Array.isArray(data.messages) ? data.messages : [];
-      const html = messages.length ? messages.map(m => `
+      messages.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      document.getElementById('messages').innerHTML = messages.length ? messages.map(m => `
             <article class="message-card">
               <div class="message-meta">
                 <strong>${escapeHtml(m.name || '匿名用户')}</strong>
@@ -48,7 +49,6 @@
               <p>${escapeHtml(m.message || '').replace(/\n/g, '<br>')}</p>
             </article>
           `).join('') : '<div class="empty-state">暂无留言，来做第一个发言的人吧。</div>';
-      document.getElementById('messages').innerHTML = html;
     }
     document.getElementById('postForm').addEventListener('submit', async (e) => {
       e.preventDefault();
