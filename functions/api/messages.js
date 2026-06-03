@@ -21,8 +21,15 @@ export async function onRequestPost(context) {
   const message = String(formData.get("message") || "").trim().slice(0, 2000);
   if (!message) return Response.json({ error: "留言内容不能为空" }, { status: 400 });
   const cf = request.cf || {};
-  const location = String(cf.city || cf.country || "未知");
+  const location = getChineseLocation(cf.city, cf.country);
   const record = { id: `${Date.now()}-${crypto.randomUUID()}`, name, message, location, createdAt: new Date().toISOString() };
   await env.MESSAGES.put(record.id, JSON.stringify(record));
   return Response.json({ ok: true, message: record });
+}
+function getChineseLocation(city, country) {
+  if (typeof city === "string" && city.trim()) return city.trim();
+  if (typeof country !== "string" || !country.trim()) return "未知";
+  const code = country.trim().toUpperCase();
+  const map = { CN: "中国", JP: "日本", KR: "韩国", US: "美国", HK: "中国香港", MO: "中国澳门", TW: "中国台湾", SG: "新加坡", MY: "马来西亚", TH: "泰国", VN: "越南", PH: "菲律宾", ID: "印度尼西亚", AU: "澳大利亚", CA: "加拿大", GB: "英国", DE: "德国", FR: "法国", IT: "意大利", ES: "西班牙", RU: "俄罗斯", IN: "印度", BR: "巴西" };
+  return map[code] || code;
 }
