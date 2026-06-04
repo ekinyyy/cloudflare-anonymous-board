@@ -43,7 +43,6 @@
             <article class="message-card">
               <div class="message-meta">
                 <strong>${escapeHtml(m.name || '匿名用户')}</strong>
-                <span class="ip-location">IP属地：${escapeHtml(m.location || '未知')}</span>
                 <time>${formatDate(m.createdAt)}</time>
               </div>
               <p>${escapeHtml(m.message || '').replace(/\n/g, '<br>')}</p>
@@ -53,7 +52,10 @@
       e.preventDefault();
       const form = e.target;
       const res = await fetch('/api/messages', { method: 'POST', body: new FormData(form), cache: 'no-store' });
-      if (res.ok) { form.reset(); await loadMessages(); }
+      if (res.ok) {
+        form.reset();
+        await loadMessages();
+      }
     });
     function escapeHtml(s) { return String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
     function formatDate(value) { if (!value) return ''; const date = new Date(value); return isNaN(date.getTime()) ? '' : date.toLocaleString('zh-CN'); }
