@@ -37,9 +37,21 @@ export async function onRequestPost(context) {
   }
 
   try {
-    const formData = await request.formData();
-    const name = String(formData.get("name") || "匿名用户").trim().slice(0, 50) || "匿名用户";
-    const message = String(formData.get("message") || "").trim().slice(0, 2000);
+    const contentType = request.headers.get("content-type") || "";
+    let payload = {};
+
+    if (contentType.includes("application/json")) {
+      payload = await request.json();
+    } else {
+      const formData = await request.formData();
+      payload = {
+        name: formData.get("name"),
+        message: formData.get("message"),
+      };
+    }
+
+    const name = String(payload?.name || "匿名用户").trim().slice(0, 50) || "匿名用户";
+    const message = String(payload?.message || "").trim().slice(0, 2000);
 
     if (!message) {
       return Response.json({ error: "留言内容不能为空" }, { status: 400 });
