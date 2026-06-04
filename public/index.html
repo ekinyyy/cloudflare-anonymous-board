@@ -34,7 +34,9 @@
     </section>
   </main>
   <script>
-    let messagesState = [];
+    let serverMessagesState = [];
+    let optimisticMessagesState = [];
+    let syncTimer = null;
 
     function escapeHtml(s) {
       return String(s)
@@ -64,13 +66,25 @@
         : '<div class="empty-state">暂无留言，来做第一个发言的人吧。</div>';
     }
 
+    function renderCurrentMessages() {
+      renderMessages([...optimisticMessagesState, ...serverMessagesState]);
+    }
+
     async function loadMessages() {
       const res = await fetch('/api/messages?t=' + Date.now(), { cache: 'no-store' });
       const data = await res.json();
       const messages = Array.isArray(data.messages) ? data.messages : [];
       messages.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-      messagesState = messages;
-      renderMessages(messagesState);
+      serverMessagesState = messages;
+      renderCurrentMessages();
+    }
+
+    function scheduleSync() {
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(async () => {
+        optimisticMessagesState = [];
+        await loadMessages();
+      }, 5000);
     }
 
     document.getElementById('postForm').addEventListener('submit', async (e) => {
@@ -88,16 +102,17 @@
         createdAt: new Date().toISOString(),
       };
 
-      messagesState = [optimisticMessage, ...messagesState];
-      renderMessages(messagesState);
+      optimisticMessagesState = [optimisticMessage, ...optimisticMessagesState];
+      renderCurrentMessages();
 
       nameInput.value = '';
       messageInput.value = '';
 
       try {
         await fetch('/api/messages', { method: 'POST', body: new FormData(form), cache: 'no-store' });
-      } finally {
-        await loadMessages();
+        scheduleSync();
+      } catch {
+        scheduleSync();
       }
     });
 
