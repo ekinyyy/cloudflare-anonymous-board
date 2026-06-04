@@ -52,6 +52,28 @@
       return isNaN(date.getTime()) ? '' : date.toLocaleString('zh-CN');
     }
 
+    function messageTimestamp(message) {
+      const date = new Date(message?.createdAt || 0);
+      const time = date.getTime();
+      return Number.isFinite(time) ? time : 0;
+    }
+
+    function sortMessages(messages) {
+      return [...messages].sort((a, b) => messageTimestamp(b) - messageTimestamp(a));
+    }
+
+    function mergeConfirmedMessages(freshMessages, retainedMessages = []) {
+      const byId = new Map();
+
+      for (const message of [...retainedMessages, ...freshMessages]) {
+        if (!message) continue;
+        const key = message.id || `${message.createdAt || ''}-${message.name || ''}-${message.message || ''}`;
+        byId.set(key, message);
+      }
+
+      return sortMessages([...byId.values()]);
+    }
+
     function renderMessages(messages) {
       document.getElementById('messages').innerHTML = messages.length
         ? messages.map(m => `
@@ -70,12 +92,15 @@
     }
 
     async function loadMessages() {
-      const res = await fetch('/api/messages?t=' + Date.now(), { cache: 'no-store' });
-      const data = await res.json();
-      const messages = Array.isArray(data.messages) ? data.messages : [];
-      messages.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-      serverMessagesState = messages;
-      renderCurrentMessages();
+      try {
+        const res = await fetch('/api/messages?t=' + Date.now(), { cache: 'no-store' });
+        const data = await res.json();
+        const messages = Array.isArray(data.messages) ? data.messages : [];
+        serverMessagesState = mergeConfirmedMessages(messages, serverMessagesState.filter(m => m && m.id));
+        renderCurrentMessages();
+      } catch (error) {
+        console.error(error);
+      }
     }
 
     document.getElementById('postForm').addEventListener('submit', async (e) => {
@@ -109,9 +134,16 @@
           throw new Error(result.error || '发表失败，请稍后重试');
         }
 
+        const savedMessage = result && typeof result.message === 'object' ? result.message : null;
+        if (!savedMessage || !savedMessage.id) {
+          throw new Error('留言已提交，但返回内容无效，请稍后刷新查看');
+        }
+
         form.reset();
         optimisticMessagesState = optimisticMessagesState.filter(m => !m._optimistic || m.message !== message || m.createdAt !== optimisticMessage.createdAt);
-        await loadMessages();
+        serverMessagesState = mergeConfirmedMessages([savedMessage], serverMessagesState);
+        renderCurrentMessages();
+        void loadMessages();
       } catch (error) {
         optimisticMessagesState = optimisticMessagesState.filter(m => !m._optimistic || m.message !== message || m.createdAt !== optimisticMessage.createdAt);
         renderCurrentMessages();
