@@ -34,8 +34,9 @@
     </section>
   </main>
   <script>
+    const PENDING_STORAGE_KEY = 'pending_messages';
     let serverMessagesState = [];
-    let optimisticMessagesState = [];
+    let pendingMessagesState = readPendingMessages();
 
     function escapeHtml(s) {
       return String(s)
@@ -52,26 +53,40 @@
       return isNaN(date.getTime()) ? '' : date.toLocaleString('zh-CN');
     }
 
-    function messageTimestamp(message) {
-      const date = new Date(message?.createdAt || 0);
-      const time = date.getTime();
-      return Number.isFinite(time) ? time : 0;
+    function safeReadPendingMessages() {
+      try {
+        const raw = localStorage.getItem(PENDING_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      } catch {
+        return [];
+      }
     }
 
-    function sortMessages(messages) {
-      return [...messages].sort((a, b) => messageTimestamp(b) - messageTimestamp(a));
+    function readPendingMessages() {
+      return safeReadPendingMessages();
     }
 
-    function mergeConfirmedMessages(freshMessages, retainedMessages = []) {
-      const byId = new Map();
+    function writePendingMessages(messages) {
+      pendingMessagesState = Array.isArray(messages) ? messages.filter(Boolean) : [];
+      try {
+        localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(pendingMessagesState));
+      } catch {
+        // ignore storage failures
+      }
+    }
 
-      for (const message of [...retainedMessages, ...freshMessages]) {
+    function dedupeById(messages) {
+      const seen = new Set();
+      const result = [];
+      for (const message of messages) {
         if (!message) continue;
         const key = message.id || `${message.createdAt || ''}-${message.name || ''}-${message.message || ''}`;
-        byId.set(key, message);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(message);
       }
-
-      return sortMessages([...byId.values()]);
+      return result;
     }
 
     function renderMessages(messages) {
@@ -88,19 +103,35 @@
     }
 
     function renderCurrentMessages() {
-      renderMessages([...optimisticMessagesState, ...serverMessagesState]);
+      const combined = dedupeById([...pendingMessagesState, ...serverMessagesState]);
+      renderMessages(combined);
     }
 
     async function loadMessages() {
       try {
         const res = await fetch('/api/messages?t=' + Date.now(), { cache: 'no-store' });
         const data = await res.json();
-        const messages = Array.isArray(data.messages) ? data.messages : [];
-        serverMessagesState = mergeConfirmedMessages(messages, serverMessagesState.filter(m => m && m.id));
+        const apiMessages = Array.isArray(data.messages) ? data.messages : [];
+        apiMessages.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+        const apiIds = new Set(apiMessages.map(message => message && message.id).filter(Boolean));
+        const filteredPending = pendingMessagesState.filter(message => !message || !message.id || !apiIds.has(message.id));
+        if (filteredPending.length !== pendingMessagesState.length) {
+          writePendingMessages(filteredPending);
+        }
+
+        serverMessagesState = apiMessages;
+        pendingMessagesState = filteredPending;
         renderCurrentMessages();
       } catch (error) {
         console.error(error);
       }
+    }
+
+    function queuePendingMessage(message) {
+      const next = [message, ...pendingMessagesState.filter(item => item && item.id !== message.id)];
+      writePendingMessages(next);
+      renderCurrentMessages();
     }
 
     document.getElementById('postForm').addEventListener('submit', async (e) => {
@@ -108,20 +139,25 @@
       const form = e.target;
       const nameInput = form.elements.name;
       const messageInput = form.elements.message;
-      const formData = new FormData(form);
-      const name = String(formData.get('name') || '匿名用户').trim() || '匿名用户';
-      const message = String(formData.get('message') || '').trim();
+      const name = String(nameInput.value || '匿名用户').trim() || '匿名用户';
+      const message = String(messageInput.value || '').trim();
       if (!message) return;
 
-      const optimisticMessage = {
-        _optimistic: true,
+      const pendingMessage = {
+        id: `pending-${Date.now()}-${crypto.randomUUID()}`,
         name,
         message,
         createdAt: new Date().toISOString(),
+        pending: true,
       };
 
-      optimisticMessagesState = [optimisticMessage, ...optimisticMessagesState];
-      renderCurrentMessages();
+      queuePendingMessage(pendingMessage);
+      nameInput.value = '';
+      messageInput.value = '';
+
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('message', message);
 
       try {
         const res = await fetch('/api/messages', {
@@ -135,20 +171,26 @@
         }
 
         const savedMessage = result && typeof result.message === 'object' ? result.message : null;
-        if (!savedMessage || !savedMessage.id) {
-          throw new Error('留言已提交，但返回内容无效，请稍后刷新查看');
+        if (savedMessage && savedMessage.id) {
+          pendingMessagesState = pendingMessagesState.map(item =>
+            item && item.id === pendingMessage.id
+              ? { ...savedMessage, pending: true }
+              : item
+          );
+          writePendingMessages(pendingMessagesState);
+          serverMessagesState = dedupeById([savedMessage, ...serverMessagesState]);
+          renderCurrentMessages();
         }
 
-        form.reset();
-        optimisticMessagesState = optimisticMessagesState.filter(m => !m._optimistic || m.message !== message || m.createdAt !== optimisticMessage.createdAt);
-        serverMessagesState = mergeConfirmedMessages([savedMessage], serverMessagesState);
-        renderCurrentMessages();
-        void loadMessages();
+        setTimeout(() => {
+          loadMessages();
+        }, 5000);
       } catch (error) {
-        optimisticMessagesState = optimisticMessagesState.filter(m => !m._optimistic || m.message !== message || m.createdAt !== optimisticMessage.createdAt);
-        renderCurrentMessages();
         console.error(error);
         alert(error instanceof Error ? error.message : '发表失败，请稍后重试');
+        pendingMessagesState = pendingMessagesState.filter(item => item && item.id !== pendingMessage.id);
+        writePendingMessages(pendingMessagesState);
+        renderCurrentMessages();
         nameInput.value = name;
         messageInput.value = message;
       }
