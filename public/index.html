@@ -36,7 +36,6 @@
   <script>
     let serverMessagesState = [];
     let optimisticMessagesState = [];
-    let syncTimer = null;
 
     function escapeHtml(s) {
       return String(s)
@@ -79,24 +78,18 @@
       renderCurrentMessages();
     }
 
-    function scheduleSync() {
-      if (syncTimer) clearTimeout(syncTimer);
-      syncTimer = setTimeout(async () => {
-        optimisticMessagesState = [];
-        await loadMessages();
-      }, 5000);
-    }
-
     document.getElementById('postForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const form = e.target;
       const nameInput = form.elements.name;
       const messageInput = form.elements.message;
-      const name = String(nameInput.value || '匿名用户').trim() || '匿名用户';
-      const message = String(messageInput.value || '').trim();
+      const formData = new FormData(form);
+      const name = String(formData.get('name') || '匿名用户').trim() || '匿名用户';
+      const message = String(formData.get('message') || '').trim();
       if (!message) return;
 
       const optimisticMessage = {
+        _optimistic: true,
         name,
         message,
         createdAt: new Date().toISOString(),
@@ -105,14 +98,27 @@
       optimisticMessagesState = [optimisticMessage, ...optimisticMessagesState];
       renderCurrentMessages();
 
-      nameInput.value = '';
-      messageInput.value = '';
-
       try {
-        await fetch('/api/messages', { method: 'POST', body: new FormData(form), cache: 'no-store' });
-        scheduleSync();
-      } catch {
-        scheduleSync();
+        const res = await fetch('/api/messages', {
+          method: 'POST',
+          body: formData,
+          cache: 'no-store',
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(result.error || '发表失败，请稍后重试');
+        }
+
+        form.reset();
+        optimisticMessagesState = optimisticMessagesState.filter(m => !m._optimistic || m.message !== message || m.createdAt !== optimisticMessage.createdAt);
+        await loadMessages();
+      } catch (error) {
+        optimisticMessagesState = optimisticMessagesState.filter(m => !m._optimistic || m.message !== message || m.createdAt !== optimisticMessage.createdAt);
+        renderCurrentMessages();
+        console.error(error);
+        alert(error instanceof Error ? error.message : '发表失败，请稍后重试');
+        nameInput.value = name;
+        messageInput.value = message;
       }
     });
 
